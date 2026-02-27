@@ -11,58 +11,64 @@ app.use(express.json());
 app.use(express.static('.'));
 app.use('/uploads', express.static('uploads'));
 
+// Multer Setup
 const storage = multer.diskStorage({
-    destination: 'uploads/',
+    destination: (req, file, cb) => {
+        const dir = './uploads';
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+        cb(null, dir);
+    },
     filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
 });
 const upload = multer({ storage: storage });
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "AIzaSyAEorgxuu__sl4__SEwCa7aVgb1CIc9UTA");
+// API Key (Priority to Environment Variable)
+const API_KEY = process.env.GEMINI_API_KEY || "AIzaSyAEorgxuu__sl4__SEwCa7aVgb1CIc9UTA";
+const genAI = new GoogleGenerativeAI(API_KEY);
 
+// 1. Image Processing API
 app.post('/api/process-image', upload.single('image'), async (req, res) => {
     try {
-        if (!req.file) return res.status(400).json({ reply: "No image uploaded." });
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        if (!req.file) return res.status(400).json({ reply: "No image found." });
+
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); // Use Flash for faster image response
         const imagePart = {
             inlineData: {
                 data: Buffer.from(fs.readFileSync(req.file.path)).toString("base64"),
                 mimeType: req.file.mimetype
             }
         };
-        const prompt = req.body.prompt || "Analyze this image.";
+
+        const prompt = req.body.prompt || "Analyze this image and describe it clearly.";
         const result = await model.generateContent([prompt, imagePart]);
         const response = await result.response;
         const replyText = response.text();
-        fs.unlinkSync(req.file.path);
 
-        if (prompt.toLowerCase().includes("edit") || prompt.toLowerCase().includes("variation")) {
-            const newImgUrl = `https://pollinations.ai/p/${encodeURIComponent(replyText)}?width=1024&height=1024&nologo=true`;
-            return res.json({ reply: `[IMAGE_START]${newImgUrl}[IMAGE_END]` });
-        }
+        // Cleanup file safely
+        if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+
         res.json({ reply: replyText });
     } catch (error) {
-        res.status(500).json({ reply: "Error processing image." });
+        console.error("Image Error:", error);
+        res.status(500).json({ reply: "AI is currently overloaded. Please wait a minute and try again." });
     }
 });
 
+// 2. Chat API
 app.post('/api/chat', async (req, res) => {
     try {
         const { message } = req.body;
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-        const systemPrompt = `Expert assistant. Provide full code, poetry, or image prompts. Context: ${message}`;
-        const result = await model.generateContent(systemPrompt);
-        const response = await result.response;
-        let replyText = response.text();
+        if (!message) return res.status(400).json({ reply: "Message is empty." });
 
-        if (message.toLowerCase().includes("image") || message.toLowerCase().includes("photo")) {
-            const imgUrl = `https://pollinations.ai/p/${encodeURIComponent(message)}?width=1024&height=1024&nologo=true`;
-            replyText += `\n\n[IMAGE_START]${imgUrl}[IMAGE_END]`;
-        }
-        res.json({ reply: replyText });
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+        const result = await model.generateContent(message);
+        const response = await result.response;
+        
+        res.json({ reply: response.text() });
     } catch (error) {
-        res.status(500).json({ reply: "System busy." });
+        console.error("Chat Error:", error);
+        res.status(500).json({ reply: "Server is busy or API limit reached. Try refreshing." });
     }
 });
 
-if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
-app.listen(PORT, () => console.log(`Server active on ${PORT}`));
+app.listen(PORT, () => console.log(`System Online: Port ${PORT}`));
