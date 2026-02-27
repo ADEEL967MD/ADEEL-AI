@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ADEEL-AI PRO SYSTEM</title>
+    <style>
+        :root { --pink: #FF1493; --blue: #00BFFF; --bg: #050505; --card: #121212; }
+        body { background: var(--bg); color: white; font-family: 'Segoe UI', sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        .header { padding: 15px; text-align: center; border-bottom: 2px solid var(--pink); background: #000; font-weight: bold; color: var(--blue); letter-spacing: 2px; position: relative; }
+        .call-btn { position: absolute; right: 20px; top: 12px; font-size: 20px; color: var(--blue); cursor: pointer; }
+        #chatBox { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 20px; padding-bottom: 80px; }
+        .msg { max-width: 85%; padding: 15px; border-radius: 12px; line-height: 1.6; position: relative; font-size: 14px; word-wrap: break-word; }
+        .user { align-self: flex-end; background: var(--pink); border-bottom-right-radius: 2px; }
+        .bot { align-self: flex-start; background: var(--card); border: 1px solid #333; border-bottom-left-radius: 2px; width: 100%; max-width: 90%; }
+        pre { background: #000; padding: 10px; border-radius: 8px; overflow-x: auto; border: 1px solid #222; color: #0f0; font-family: monospace; }
+        .controls { display: flex; gap: 10px; margin-top: 10px; border-top: 1px solid #222; padding-top: 10px; }
+        .btn-small { background: none; border: 1px solid var(--blue); color: var(--blue); padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; }
+        .btn-small:hover { background: var(--blue); color: black; }
+        .generated-img { width: 100%; max-width: 400px; border-radius: 10px; margin-top: 10px; border: 2px solid var(--pink); }
+        .input-area { padding: 15px; background: #000; display: flex; gap: 10px; border-top: 2px solid var(--pink); position: fixed; bottom: 0; width: 100%; box-sizing: border-box; }
+        input[type="text"] { flex: 1; background: #111; border: 1px solid #333; color: white; padding: 12px; border-radius: 5px; outline: none; }
+        .icon-btn { background: none; border: none; color: var(--blue); font-size: 20px; cursor: pointer; padding: 0 10px; }
+        .send-btn { background: var(--pink); border: none; color: white; padding: 0 25px; border-radius: 5px; font-weight: bold; cursor: pointer; }
+        #imageInput { display: none; }
+        
+        /* Call Interface CSS */
+        #callUI { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; color: white; z-index: 2000; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        #callStatus { font-size: 24px; color: var(--blue); margin-top: 20px; }
+        #endCall { background: #ff3b30; border: none; color: white; padding: 15px 40px; border-radius: 30px; margin-top: 100px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        ADEEL-AI PRO SYSTEM
+        <span class="call-btn" onclick="startCall()">📞</span>
+    </div>
+    
+    <div id="chatBox">
+        <div class="msg bot">Hello! I am Adeel-AI Master. I can code, generate/edit images, create poetry, and even call you!</div>
+    </div>
+
+    <div class="input-area">
+        <input type="file" id="imageInput" accept="image/*" onchange="previewImage(this)">
+        <button class="icon-btn" onclick="document.getElementById('imageInput').click()">📷</button>
+        <input type="text" id="userInput" placeholder="Ask anything, or edit an image..." onkeypress="if(event.key==='Enter') sendMsg()">
+        <button class="send-btn" onclick="sendMsg()">SEND</button>
+    </div>
+
+    <div id="callUI">
+        <div id="callStatus">AI is Calling...</div>
+        <button id="endCall" onclick="endCall()">END CALL</button>
+    </div>
+
+    <script>
+        let selectedFile = null;
+        let mediaRecorder;
+        let audioChunks = [];
+        let isCalling = false;
+
+        // Image Preview function
+        function previewImage(input) {
+            if (input.files && input.files[0]) {
+                selectedFile = input.files[0];
+                const chatBox = document.getElementById('chatBox');
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    chatBox.innerHTML += `<div class="msg user"><img src="${e.target.result}" style="max-width:200px; border-radius:10px; border:2px solid var(--pink);"></div>`;
+                    document.getElementById('userInput').placeholder = "Now tell me how to edit this image...";
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                }
+                reader.readAsDataURL(selectedFile);
+            }
+        }
+
+        // Copy Text
+        function copyText(btn, text) {
+            navigator.clipboard.writeText(text);
+            btn.innerText = "COPIED!";
+            setTimeout(() => btn.innerText = "COPY", 2000);
+        }
+
+        // Voice Player
+        function playVoice(text) {
+            window.speechSynthesis.cancel();
+            const cleanText = text.replace(/\[IMAGE_START\].*?\[IMAGE_END\]/gs, "");
+            const utterance = new SpeechSynthesisUtterance(cleanText);
+            utterance.lang = /[\u0600-\u06FF]/.test(text) ? 'ur-PK' : 'en-US';
+            window.speechSynthesis.speak(utterance);
+        }
+
+        // Function to process response from AI
+        async function processAiResponse(reply, chatBox) {
+            let imgHtml = "";
+            const imgMatch = reply.match(/\[IMAGE_START\](.*?)\[IMAGE_END\]/);
+            if (imgMatch) {
+                imgHtml = `<img src="${imgMatch[1]}" class="generated-img">`;
+                reply = reply.replace(imgMatch[0], "");
+            }
+
+            const botDiv = document.createElement('div');
+            botDiv.className = 'msg bot';
+            botDiv.innerHTML = `
+                <div class="text-content">${reply.replace(/\n/g, "<br>")}</div>
+                ${imgHtml}
+                <div class="controls">
+                    <button class="btn-small" onclick="copyText(this, \`${reply.replace(/`/g, "\\`")}\`)">COPY</button>
+                    <button class="btn-small" onclick="playVoice(\`${reply.replace(/`/g, "\\`")}\`)">▶ PLAY</button>
+                </div>
+            `;
+            chatBox.appendChild(botDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        async function sendMsg() {
+            const input = document.getElementById('userInput');
+            const chatBox = document.getElementById('chatBox');
+            const text = input.value.trim();
+            if (!text && !selectedFile) return;
+
+            if (text) {
+                chatBox.innerHTML += `<div class="msg user">${text}</div>`;
+                input.value = '';
+                chatBox.scrollTop = chatBox.scrollHeight;
+            }
+
+            try {
+                let res;
+                if (selectedFile) {
+                    // Image to Image processing
+                    const formData = new FormData();
+                    formData.append('image', selectedFile);
+                    formData.append('prompt', text || "Generate a creative variation of this image.");
+
+                    res = await fetch('/api/process-image', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    selectedFile = null; // Clear selected file after upload
+                    document.getElementById('userInput').placeholder = "Ask anything, or edit an image...";
+                } else {
+                    // Normal chat processing
+                    res = await fetch('/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: text })
+                    });
+                }
+                const data = await res.json();
+                processAiResponse(data.reply, chatBox);
+            } catch (e) {
+                chatBox.innerHTML += `<div class="msg bot">Connection Error.</div>`;
+            }
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        // Call System functions
+        function startCall() {
+            document.getElementById('callUI').style.display = 'flex';
+            document.getElementById('callStatus').innerText = "Connecting to AI...";
+            isCalling = true;
+            playVoice("Adeel-AI PRO is now connected. Speak to start.");
+
+            // Start Speech Recognition
+            if ('webkitSpeechRecognition' in window) {
+                const recognition = new webkitSpeechRecognition();
+                recognition.continuous = true;
+                recognition.interimResults = false;
+                recognition.lang = 'en-US'; // Default to English, can add detection
+
+                recognition.onresult = async (event) => {
+                    const speechToText = event.results[event.results.length - 1][0].transcript;
+                    document.getElementById('callStatus').innerText = "AI is thinking...";
+
+                    // Send to AI and play response
+                    const res = await fetch('/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: speechToText })
+                    });
+                    const data = await res.json();
+                    
+                    document.getElementById('callStatus').innerText = "AI is speaking...";
+                    playVoice(data.reply);
+                    
+                    // After AI speaks, prompt user again
+                    utterance.onend = () => {
+                        if(isCalling) document.getElementById('callStatus').innerText = "Speak to Adeel-AI...";
+                    };
+                };
+
+                recognition.start();
+                recognition.onend = () => { if(isCalling) recognition.start(); }; // Keep recognition on
+                window.callRecognition = recognition; // Save for ending
+            } else {
+                alert("Call feature is not supported in this browser.");
+            }
+        }
+
+        function endCall() {
+            document.getElementById('callUI').style.display = 'none';
+            isCalling = false;
+            if(window.callRecognition) window.callRecognition.stop();
+            window.speechSynthesis.cancel();
+            document.getElementById('chatBox').innerHTML += `<div class="msg bot">Call ended.</div>`;
+        }
+    </script>
+</body>
+</html>
