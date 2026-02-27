@@ -22,7 +22,6 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "AIzaSyAEorgx
 app.post('/api/process-image', upload.single('image'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ reply: "No image uploaded." });
-
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const imagePart = {
             inlineData: {
@@ -30,19 +29,16 @@ app.post('/api/process-image', upload.single('image'), async (req, res) => {
                 mimeType: req.file.mimetype
             }
         };
-
-        const prompt = req.body.prompt || "Analyze this image and provide a detailed description or edit instructions.";
+        const prompt = req.body.prompt || "Analyze this image.";
         const result = await model.generateContent([prompt, imagePart]);
         const response = await result.response;
         const replyText = response.text();
-
         fs.unlinkSync(req.file.path);
 
         if (prompt.toLowerCase().includes("edit") || prompt.toLowerCase().includes("variation")) {
             const newImgUrl = `https://pollinations.ai/p/${encodeURIComponent(replyText)}?width=1024&height=1024&nologo=true`;
-            return res.json({ reply: `Processed: [IMAGE_START]${newImgUrl}[IMAGE_END]` });
+            return res.json({ reply: `[IMAGE_START]${newImgUrl}[IMAGE_END]` });
         }
-
         res.json({ reply: replyText });
     } catch (error) {
         res.status(500).json({ reply: "Error processing image." });
@@ -53,9 +49,7 @@ app.post('/api/chat', async (req, res) => {
     try {
         const { message } = req.body;
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-
-        const systemPrompt = `Act as an expert developer and AI assistant. Provide complete, fixed, and final code if asked. Generate poetry or images based on user intent. Current user message: ${message}`;
-
+        const systemPrompt = `Expert assistant. Provide full code, poetry, or image prompts. Context: ${message}`;
         const result = await model.generateContent(systemPrompt);
         const response = await result.response;
         let replyText = response.text();
@@ -64,13 +58,11 @@ app.post('/api/chat', async (req, res) => {
             const imgUrl = `https://pollinations.ai/p/${encodeURIComponent(message)}?width=1024&height=1024&nologo=true`;
             replyText += `\n\n[IMAGE_START]${imgUrl}[IMAGE_END]`;
         }
-
         res.json({ reply: replyText });
     } catch (error) {
-        res.status(500).json({ reply: "System is busy, try again." });
+        res.status(500).json({ reply: "System busy." });
     }
 });
 
 if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
-
-app.listen(PORT, () => console.log(`Server started on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server active on ${PORT}`));
